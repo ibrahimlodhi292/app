@@ -22,7 +22,7 @@ export async function sendEmail(params: SendEmailParams): Promise<{ id: string }
       subject: params.subject,
       template: params.template,
       status: "PENDING",
-      metadata: params.metadata,
+      metadata: params.metadata ? JSON.parse(JSON.stringify(params.metadata)) : undefined,
     },
   });
 

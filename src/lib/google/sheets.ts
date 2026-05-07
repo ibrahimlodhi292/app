@@ -128,9 +128,9 @@ export async function saveReservationToSheets(params: {
   try {
     const { sheets, spreadsheetId } = await getSheetsClient(params.restaurantId);
 
-    const existing = spreadsheetId && (await sheets.spreadsheets.get({ spreadsheetId }));
-    const hasReservationsSheet = (existing as Awaited<typeof existing>)?.data?.sheets?.find(
-      (s: { properties?: { title?: string } }) => s.properties?.title === "Reservations"
+    const existing = spreadsheetId ? await sheets.spreadsheets.get({ spreadsheetId }) : null;
+    const hasReservationsSheet = existing?.data?.sheets?.find(
+      (s) => s.properties?.title === "Reservations"
     );
 
     if (!hasReservationsSheet) {

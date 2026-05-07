@@ -16,7 +16,7 @@ const messageSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const ip = req.ip || req.headers.get("x-forwarded-for") || "unknown";
+  const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
   const rateCheck = await checkRateLimit(`chat:${ip}`, 60, 60000);
   if (!rateCheck.allowed) {
     return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
           role: "assistant",
           content: text,
           tokensUsed: usage?.totalTokens,
-          metadata: sources.length > 0 ? { sources } : undefined,
+          metadata: sources.length > 0 ? (JSON.parse(JSON.stringify({ sources }))) : undefined,
         },
       });
 
@@ -178,7 +178,8 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  const response = result.toDataStreamResponse();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const response = (result as any).toDataStreamResponse() as Response;
   response.headers.set("X-Conversation-Id", conversation.id);
   return response;
 }
