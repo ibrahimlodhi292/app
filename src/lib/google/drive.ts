@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { Readable } from "stream";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdf = require("pdf-parse/lib/pdf.js") as typeof import("pdf-parse");
+const pdf = require("pdf-parse/lib/pdf-parse.js") as typeof import("pdf-parse");
 import prisma from "@/lib/db/prisma";
 import { generateEmbeddings, upsertVectors, chunkText, deleteVectors } from "@/lib/ai/embeddings";
 import { type DriveFile, type DriveSyncResult } from "@/types";
