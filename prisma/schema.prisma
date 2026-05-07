@@ -1,0 +1,318 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  OWNER
+  USER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  LOST
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+  BOUNCED
+}
+
+enum SyncStatus {
+  IDLE
+  SYNCING
+  SUCCESS
+  FAILED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  image         String?
+  role          Role      @default(USER)
+  restaurantId  String?
+  restaurant    Restaurant? @relation(fields: [restaurantId], references: [id])
+  googleTokens  Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  conversations Conversation[]
+  sessions      Session[]
+
+  @@index([email])
+  @@index([restaurantId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+model Restaurant {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  description   String?
+  logo          String?
+  address       String?
+  phone         String?
+  email         String?
+  website       String?
+  timezone      String   @default("UTC")
+  currency      String   @default("USD")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users         User[]
+  conversations Conversation[]
+  leads         Lead[]
+  reservations  Reservation[]
+  documents     Document[]
+  settings      AdminSettings?
+  emailLogs     EmailLog[]
+  analytics     Analytics[]
+  integrations  Integration[]
+
+  @@index([slug])
+}
+
+model Conversation {
+  id           String    @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sessionId    String    @unique @default(cuid())
+  title        String?
+  summary      String?
+  isActive     Boolean   @default(true)
+  isEscalated  Boolean   @default(false)
+  escalatedAt  DateTime?
+  endedAt      DateTime?
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  messages     Message[]
+  lead         Lead?
+  reservation  Reservation?
+
+  @@index([restaurantId])
+  @@index([userId])
+  @@index([sessionId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String       @db.Text
+  metadata       Json?
+  tokensUsed     Int?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+model Lead {
+  id             String       @id @default(cuid())
+  restaurantId   String
+  restaurant     Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  conversationId String?      @unique
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  name           String?
+  email          String?
+  phone          String?
+  inquiry        String?      @db.Text
+  summary        String?      @db.Text
+  score          Int          @default(0)
+  status         LeadStatus   @default(NEW)
+  source         String?
+  metadata       Json?
+  sheetRowId     String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([restaurantId])
+  @@index([email])
+  @@index([status])
+}
+
+model Reservation {
+  id             String            @id @default(cuid())
+  restaurantId   String
+  restaurant     Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  conversationId String?           @unique
+  conversation   Conversation?     @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  guestName      String
+  guestEmail     String?
+  guestPhone     String?
+  partySize      Int
+  date           DateTime
+  timeSlot       String
+  specialRequests String?          @db.Text
+  status         ReservationStatus @default(PENDING)
+  confirmationCode String          @unique @default(cuid())
+  reminderSent   Boolean           @default(false)
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  emailLogs      EmailLog[]
+
+  @@index([restaurantId])
+  @@index([date])
+  @@index([status])
+  @@index([confirmationCode])
+}
+
+model Document {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  type         String
+  driveFileId  String?
+  driveUrl     String?
+  content      String?    @db.Text
+  size         Int?
+  mimeType     String?
+  isIndexed    Boolean    @default(false)
+  indexedAt    DateTime?
+  syncStatus   SyncStatus @default(IDLE)
+  errorMessage String?
+  checksum     String?
+  metadata     Json?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  embeddings   EmbeddingChunk[]
+
+  @@index([restaurantId])
+  @@index([driveFileId])
+  @@index([isIndexed])
+}
+
+model EmbeddingChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String   @db.Text
+  chunkIndex Int
+  vectorId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+  @@index([vectorId])
+}
+
+model Integration {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  type         String
+  name         String
+  config       Json
+  isActive     Boolean    @default(false)
+  lastSyncAt   DateTime?
+  syncStatus   SyncStatus @default(IDLE)
+  errorMessage String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([restaurantId, type])
+  @@index([restaurantId])
+}
+
+model EmailLog {
+  id             String      @id @default(cuid())
+  restaurantId   String
+  restaurant     Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reservationId  String?
+  reservation    Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  to             String
+  subject        String
+  template       String
+  status         EmailStatus @default(PENDING)
+  attempts       Int         @default(0)
+  lastAttemptAt  DateTime?
+  sentAt         DateTime?
+  errorMessage   String?
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([restaurantId])
+  @@index([status])
+  @@index([to])
+}
+
+model Analytics {
+  id              String     @id @default(cuid())
+  restaurantId    String
+  restaurant      Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  date            DateTime   @db.Date
+  totalChats      Int        @default(0)
+  totalMessages   Int        @default(0)
+  totalLeads      Int        @default(0)
+  totalReservations Int      @default(0)
+  avgSessionDuration Float?
+  topIntents      Json?
+  topQuestions    Json?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([restaurantId, date])
+  @@index([restaurantId])
+  @@index([date])
+}
+
+model AdminSettings {
+  id                    String     @id @default(cuid())
+  restaurantId          String     @unique
+  restaurant            Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  aiPersonality         String?    @db.Text
+  systemPrompt          String?    @db.Text
+  welcomeMessage        String?
+  businessHours         Json?
+  reservationSettings   Json?
+  emailNotifications    Json?
+  googleDriveFolderIds  String[]
+  autoSync              Boolean    @default(false)
+  syncIntervalMinutes   Int        @default(60)
+  maxConversationLength Int        @default(50)
+  escalationThreshold   Int        @default(3)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+}
