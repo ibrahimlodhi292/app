@@ -11,7 +11,7 @@ const loginSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const ip = req.ip || req.headers.get("x-forwarded-for") || "unknown";
+  const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
   const rateCheck = await checkRateLimit(`login:${ip}`, 10, 60000);
   if (!rateCheck.allowed) {
     return NextResponse.json(
