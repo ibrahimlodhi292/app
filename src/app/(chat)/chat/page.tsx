@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "ai/react";
 import { Menu, Settings, LogOut, ChevronDown, Bot, Sparkles, Zap, LayoutDashboard } from "lucide-react";
@@ -32,45 +32,68 @@ export default function ChatPage() {
   const restaurantId = user?.restaurantId || "";
   const restaurantName = user?.restaurant?.name || "Restaurant AI";
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, setInput, setMessages } = useChat({
+  const {
+    messages,
+    isLoading,
+    setMessages,
+    append,
+    stop,
+  } = useChat({
     api: "/api/chat",
     body: { restaurantId, conversationId },
     onResponse: (res) => {
       const id = res.headers.get("x-conversation-id");
-      if (id && !conversationId) { setConversationId(id); setActiveConversation(id); }
+      if (id && !conversationId) {
+        setConversationId(id);
+        setActiveConversation(id);
+      }
     },
-    onError: () => toast.error("Message failed. Please try again."),
+    onError: (err) => {
+      const msg = err.message || "Message failed. Please try again.";
+      if (msg.includes("Rate limit")) {
+        toast.error("You're sending messages too fast. Please slow down.");
+      } else if (msg.includes("not configured") || msg.includes("API key")) {
+        toast.error("AI is not configured yet. Check your OpenAI key.");
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
+    },
   });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  function handleNewConversation() {
+  const handleNewConversation = useCallback(() => {
     setConversationId(undefined);
     setActiveConversation(null);
     setMessages([]);
     setSidebarOpen(false);
-  }
+  }, [setActiveConversation, setMessages]);
 
-  function sendMessage(msg: string) {
-    setInput(msg);
-    setTimeout(() => {
-      document.getElementById("chat-form")?.dispatchEvent(
-        new Event("submit", { bubbles: true, cancelable: true })
-      );
-    }, 10);
-  }
+  const sendMessage = useCallback(
+    (msg: string) => {
+      const trimmed = msg.trim();
+      if (!trimmed || isLoading) return;
+      append({ role: "user", content: trimmed });
+    },
+    [append, isLoading]
+  );
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {}
     logout();
     router.push("/login");
   }
 
   const chatMessages: ChatMessage[] = messages.map((m) => ({
-    id: m.id, role: m.role as "user" | "assistant",
-    content: m.content, createdAt: new Date(), sources: [],
+    id: m.id,
+    role: m.role as "user" | "assistant",
+    content: m.content,
+    createdAt: new Date(),
+    sources: [],
   }));
 
   const isWelcome = messages.length === 0;
@@ -87,7 +110,11 @@ export default function ChatPage() {
       <ConversationSidebar
         conversations={conversations}
         activeId={activeConversationId}
-        onSelectConversation={(id) => { setConversationId(id); setActiveConversation(id); setSidebarOpen(false); }}
+        onSelectConversation={(id) => {
+          setConversationId(id);
+          setActiveConversation(id);
+          setSidebarOpen(false);
+        }}
         onNewConversation={handleNewConversation}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -117,7 +144,6 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* Model badge */}
             <div className="hidden sm:flex items-center gap-1.5 bg-indigo-500/[0.08] border border-indigo-500/20 rounded-full px-2.5 py-1">
               <Sparkles className="w-3 h-3 text-indigo-400" />
               <span className="text-[10px] text-indigo-400 font-semibold">GPT-4o</span>
@@ -125,14 +151,12 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Online status */}
             <div className="hidden sm:flex items-center gap-1.5 bg-emerald-500/[0.07] border border-emerald-500/15 rounded-full px-2.5 py-1">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
               <span className="text-[10px] text-emerald-400 font-medium">Online</span>
             </div>
 
-            {/* User menu */}
-            {user && (
+            {user ? (
               <div className="relative">
                 <button
                   onClick={() => setMenuOpen(!menuOpen)}
@@ -174,6 +198,13 @@ export default function ChatPage() {
                   )}
                 </AnimatePresence>
               </div>
+            ) : (
+              <button
+                onClick={() => router.push("/login")}
+                className="flex items-center gap-1.5 bg-white/[0.06] border border-white/[0.1] hover:bg-white/[0.1] text-white/70 hover:text-white text-xs font-medium px-3 py-1.5 rounded-xl transition-all"
+              >
+                Sign in
+              </button>
             )}
           </div>
         </header>
@@ -189,7 +220,6 @@ export default function ChatPage() {
                 exit={{ opacity: 0 }}
                 className="flex flex-col items-center justify-center min-h-full text-center px-6 py-12"
               >
-                {/* Floating bot icon */}
                 <motion.div
                   initial={{ scale: 0, rotate: -15 }}
                   animate={{ scale: 1, rotate: 0 }}
@@ -209,7 +239,6 @@ export default function ChatPage() {
                   </motion.div>
                 </motion.div>
 
-                {/* Text */}
                 <motion.div
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -224,7 +253,6 @@ export default function ChatPage() {
                   </p>
                 </motion.div>
 
-                {/* Prompt cards */}
                 <motion.div
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -251,7 +279,6 @@ export default function ChatPage() {
                   ))}
                 </motion.div>
 
-                {/* Bottom hint */}
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -283,17 +310,14 @@ export default function ChatPage() {
 
         {/* Input area */}
         <div className="flex-shrink-0 p-4 border-t border-white/[0.04] bg-[#03030A]/80 backdrop-blur-xl relative z-10">
-          <form id="chat-form" onSubmit={handleSubmit}>
-            <ChatInput
-              onSend={sendMessage}
-              isLoading={isLoading}
-              disabled={!restaurantId}
-            />
-          </form>
+          <ChatInput
+            onSend={sendMessage}
+            isLoading={isLoading}
+            disabled={false}
+          />
         </div>
       </div>
 
-      {/* Menu backdrop */}
       {menuOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
       )}

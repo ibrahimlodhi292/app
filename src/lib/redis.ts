@@ -1,9 +1,23 @@
 import { Redis } from "@upstash/redis";
 
-export const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+let _redis: Redis | null = null;
+let _initialized = false;
+
+function getRedis(): Redis | null {
+  if (_initialized) return _redis;
+  _initialized = true;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token || url === "your-upstash-url" || token === "your-upstash-token") {
+    return null;
+  }
+  try {
+    _redis = new Redis({ url, token });
+  } catch {
+    _redis = null;
+  }
+  return _redis;
+}
 
 export const CACHE_KEYS = {
   conversation: (id: string) => `conv:${id}`,
@@ -23,6 +37,8 @@ export const CACHE_TTL = {
 } as const;
 
 export async function getCached<T>(key: string): Promise<T | null> {
+  const redis = getRedis();
+  if (!redis) return null;
   try {
     return await redis.get<T>(key);
   } catch {
@@ -30,11 +46,9 @@ export async function getCached<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function setCached<T>(
-  key: string,
-  value: T,
-  ttl?: number
-): Promise<void> {
+export async function setCached<T>(key: string, value: T, ttl?: number): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
   try {
     if (ttl) {
       await redis.setex(key, ttl, value);
@@ -42,35 +56,40 @@ export async function setCached<T>(
       await redis.set(key, value);
     }
   } catch {
-    // silent fail — Redis is a cache, not critical
+    // silent — Redis is a cache, not critical
   }
 }
 
 export async function deleteCached(key: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
   try {
     await redis.del(key);
   } catch {}
 }
 
 export async function checkRateLimit(
-  ip: string,
+  key: string,
   limit: number = Number(process.env.RATE_LIMIT_REQUESTS) || 100,
   windowMs: number = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000
 ): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
-  const key = CACHE_KEYS.rateLimit(ip);
-  const windowSec = Math.floor(windowMs / 1000);
-
-  const current = await redis.incr(key);
-  if (current === 1) {
-    await redis.expire(key, windowSec);
+  const redis = getRedis();
+  if (!redis) {
+    // No Redis → allow all requests
+    return { allowed: true, remaining: limit, resetAt: Date.now() + windowMs };
   }
 
-  const ttl = await redis.ttl(key);
-  const resetAt = Date.now() + ttl * 1000;
-
-  return {
-    allowed: current <= limit,
-    remaining: Math.max(0, limit - current),
-    resetAt,
-  };
+  const windowSec = Math.floor(windowMs / 1000);
+  try {
+    const current = await redis.incr(key);
+    if (current === 1) await redis.expire(key, windowSec);
+    const ttl = await redis.ttl(key);
+    return {
+      allowed: current <= limit,
+      remaining: Math.max(0, limit - current),
+      resetAt: Date.now() + ttl * 1000,
+    };
+  } catch {
+    return { allowed: true, remaining: limit, resetAt: Date.now() + windowMs };
+  }
 }

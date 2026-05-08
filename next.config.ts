@@ -8,9 +8,6 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "res.cloudinary.com" },
     ],
   },
-  experimental: {
-    serverActions: { allowedOrigins: ["localhost:3000"] },
-  },
 };
 
 export default nextConfig;
